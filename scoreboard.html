@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Basketball Scoreboard</title>
+<style>body{margin:0;background:black;color:white;font-family:'Noto Sans KR', Arial, Helvetica, sans-serif;overflow:hidden;}
+
+.container{
+height:100vh;
+display:flex;
+flex-direction:column;
+justify-content:space-between;
+padding:2vh 4vw;
+box-sizing:border-box;
+}
+
+.number{
+font-variant-numeric:tabular-nums;
+text-align:center;
+}
+
+/* 상단 */
+
+.top-row{
+display:flex;
+justify-content:space-between;
+align-items:center;
+}
+
+.foul{
+font-size:16vh;
+color:#aaff00;
+width:12vw;
+text-align:center;
+}
+
+.game-clock{
+font-size:32vh;
+color:#ff2a2a;
+flex:1;
+text-align:center;
+}
+
+/* 쿼터 */
+
+.middle-row{
+display:flex;
+justify-content:center;
+align-items:center;
+}
+
+.quarter-box{
+border:8px solid white;
+border-radius:25px;
+padding:1vh 3vw;
+color:#ffcc00;
+font-size:9vh;
+font-weight:bold;
+}
+
+/* 하단 */
+
+.bottom-area{
+position:relative;
+height:45vh;
+}
+
+.team-name{
+position:absolute;
+top:-20vh;
+width:30%;
+font-size:6.5vh;
+text-align:center;
+}
+
+#teamAName{ left:5%; }
+#teamBName{ right:5%; }
+
+.score-row{
+position:absolute;
+bottom:0;
+width:100%;
+display:flex;
+justify-content:space-between;
+align-items:flex-end;
+}
+
+.score{
+width:33.33%;
+font-size:38vh;
+text-align:center;
+color:#ffcc00;
+}
+
+.shot-clock{
+width:33.33%;
+font-size:18vh;
+color:#aaff00;
+text-align:center;
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<div class="top-row">
+<div class="foul number" id="foulA">0</div>
+<div class="game-clock number" id="gameClock">10:00</div>
+<div class="foul number" id="foulB">0</div>
+</div>
+
+<div class="middle-row">
+<div class="quarter-box" id="quarterDisplay">1</div>
+</div>
+
+<div class="bottom-area">
+
+<div class="team-name" id="teamAName">Team A</div>
+<div class="team-name" id="teamBName">Team B</div>
+
+<div class="score-row">
+<div class="score number" id="scoreA">0</div>
+<div class="shot-clock number" id="shotClock">24</div>
+<div class="score number" id="scoreB">0</div>
+</div>
+
+</div>
+</div>
+
+<script>
+
+let scoreA=0, scoreB=0
+let foulA=0, foulB=0
+
+let gameTime=10*60
+let gameRunning=false, gameInterval
+
+let shotTime=24
+let shotRunning=false, shotInterval
+
+let quarterIndex=0
+const quarters=["1","2","3","4","OT"]
+
+const pressedKeys=new Set()
+
+/* ===== 팀명 변경 ===== */
+
+function changeTeamNames(){
+
+let currentA=document.getElementById("teamAName").innerText
+let currentB=document.getElementById("teamBName").innerText
+
+let newA=prompt("Team A 이름 입력",currentA)
+if(newA!==null && newA.trim()!==""){
+document.getElementById("teamAName").innerText=newA
+}
+
+let newB=prompt("Team B 이름 입력",currentB)
+if(newB!==null && newB.trim()!==""){
+document.getElementById("teamBName").innerText=newB
+}
+
+}
+
+/* ===== 부저 ===== */
+
+let audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+let manualOsc=null
+let currentBuzzer=null
+
+function stopBuzzer(){
+
+if(currentBuzzer){
+currentBuzzer.stop()
+currentBuzzer.disconnect()
+currentBuzzer=null
+}
+
+}
+
+function playBuzzer(freq,duration){
+
+stopBuzzer()
+
+const osc=audioCtx.createOscillator()
+const gain=audioCtx.createGain()
+
+osc.type="square"
+osc.frequency.value=freq
+
+osc.connect(gain)
+gain.connect(audioCtx.destination)
+
+osc.start()
+
+currentBuzzer=osc
+
+setTimeout(()=>{
+if(currentBuzzer===osc){
+osc.stop()
+currentBuzzer=null
+}
+},duration)
+
+}
+
+function gameEndBuzzer(){
+playBuzzer(250,2500)
+}
+
+function shotClockBuzzer(){
+playBuzzer(900,1500)
+}
+
+/* ===== 표시 업데이트 ===== */
+
+function updateGameClock(){
+
+const display=document.getElementById("gameClock")
+
+if(gameTime<=59.9){
+
+let sec = gameTime.toFixed(1).padStart(4,"0")
+display.innerText=sec
+
+}else{
+
+let minutes=Math.floor(gameTime/60)
+let seconds=Math.floor(gameTime%60)
+
+display.innerText=
+String(minutes).padStart(2,'0')+":"+
+String(seconds).padStart(2,'0')
+
+}
+
+}
+
+function updateShotClock(){
+
+const display=document.getElementById("shotClock")
+
+if(shotTime<=9.9){
+display.innerText=shotTime.toFixed(1)
+}else{
+display.innerText=Math.ceil(shotTime)
+}
+
+}
+
+function updateQuarter(){
+document.getElementById("quarterDisplay").innerText=quarters[quarterIndex]
+}
+
+function updateFoulDisplay(){
+
+const fa=document.getElementById("foulA")
+const fb=document.getElementById("foulB")
+
+fa.innerText=foulA
+fb.innerText=foulB
+
+fa.style.color=(foulA===5)?"red":"#aaff00"
+fb.style.color=(foulB===5)?"red":"#aaff00"
+
+}
+
+/* ===== 경기시간 ===== */
+
+function startStopGame(){
+
+if(gameRunning){
+
+clearInterval(gameInterval)
+gameRunning=false
+
+}else{
+
+gameRunning=true
+
+gameInterval=setInterval(()=>{
+
+if(gameTime<=0){
+
+gameTime=0
+updateGameClock()
+gameEndBuzzer()
+
+clearInterval(gameInterval)
+gameRunning=false
+return
+
+}
+
+gameTime-=0.1
+gameTime=Math.max(0,parseFloat(gameTime.toFixed(1)))
+updateGameClock()
+
+},100)
+
+}
+
+}
+
+function resetGame(){
+
+clearInterval(gameInterval)
+gameRunning=false
+gameTime=10*60
+updateGameClock()
+
+}
+
+function adjustGameMinutes(v){
+
+let total=gameTime+v*60
+total=Math.max(0,Math.min(99*60+59,total))
+
+gameTime=total
+updateGameClock()
+
+}
+
+function adjustGameSeconds(v){
+
+let total=gameTime+v
+total=Math.max(0,Math.min(99*60+59,total))
+
+gameTime=total
+updateGameClock()
+
+}
+
+/* ===== 샷클락 ===== */
+
+function startStopShot(){
+
+if(shotRunning){
+
+clearInterval(shotInterval)
+shotRunning=false
+
+}else{
+
+shotRunning=true
+
+shotInterval=setInterval(()=>{
+
+if(shotTime<=0){
+
+shotTime=0
+updateShotClock()
+shotClockBuzzer()
+
+clearInterval(shotInterval)
+shotRunning=false
+return
+
+}
+
+shotTime-=0.1
+shotTime=Math.max(0,parseFloat(shotTime.toFixed(1)))
+updateShotClock()
+
+},100)
+
+}
+
+}
+
+function resetShot(){
+
+stopBuzzer()
+
+clearInterval(shotInterval)
+shotRunning=false
+shotTime=24
+updateShotClock()
+
+}
+
+function set14(){
+
+stopBuzzer()
+
+clearInterval(shotInterval)
+shotRunning=false
+shotTime=14
+updateShotClock()
+
+}
+
+function adjustShot(v){
+
+shotTime=Math.max(0,Math.min(99,shotTime+v))
+updateShotClock()
+
+}
+
+/* ===== 점수 ===== */
+
+function adjustScore(team,v){
+
+if(team==="A"){
+scoreA=Math.max(0,scoreA+v)
+document.getElementById("scoreA").innerText=scoreA
+}else{
+scoreB=Math.max(0,scoreB+v)
+document.getElementById("scoreB").innerText=scoreB
+}
+
+}
+
+function resetScores(){
+
+scoreA=0
+scoreB=0
+
+document.getElementById("scoreA").innerText=0
+document.getElementById("scoreB").innerText=0
+
+}
+
+/* ===== 파울 ===== */
+
+function addFoul(team){
+
+if(team==="A"){
+foulA=(foulA+1)%6
+}else{
+foulB=(foulB+1)%6
+}
+
+updateFoulDisplay()
+
+}
+
+/* ===== 키 입력 ===== */
+
+document.addEventListener("keydown",(e)=>{
+
+if(pressedKeys.has(e.key)) return
+pressedKeys.add(e.key)
+
+switch(e.key){
+
+case "a": adjustScore("A",1); break
+case "s": adjustScore("A",2); break
+case "d": adjustScore("A",3); break
+case "z": adjustScore("A",-1); break
+case "x": addFoul("A"); break
+
+case "l": adjustScore("B",3); break
+case ";": adjustScore("B",2); break
+case "'": adjustScore("B",1); break
+case "/": adjustScore("B",-1); break
+case ".": addFoul("B"); break
+
+case "b": resetScores(); break
+
+case "q": set14(); break
+case "w": resetShot(); break
+case "e": startStopShot(); break
+case "r": adjustShot(1); break
+case "f": adjustShot(-1); break
+
+case "p": resetGame(); break
+case "o": startStopGame(); break
+case "u": adjustGameMinutes(1); break
+case "j": adjustGameMinutes(-1); break
+case "i": adjustGameSeconds(1); break
+case "k": adjustGameSeconds(-1); break
+
+case "n":
+quarterIndex=(quarterIndex+1)%quarters.length
+updateQuarter()
+break
+
+case "g":
+changeTeamNames()
+break
+
+/* 수동 부저 */
+
+case "h":
+
+if(!manualOsc){
+
+manualOsc=audioCtx.createOscillator()
+manualOsc.type="square"
+manualOsc.frequency.value=250
+
+manualOsc.connect(audioCtx.destination)
+manualOsc.start()
+
+}
+
+break
+
+}
+
+})
+
+document.addEventListener("keyup",(e)=>{
+
+pressedKeys.delete(e.key)
+
+if(e.key==="h" && manualOsc){
+
+manualOsc.stop()
+manualOsc.disconnect()
+manualOsc=null
+
+}
+
+})
+
+updateGameClock()
+updateShotClock()
+updateQuarter()
+updateFoulDisplay()
+
+</script>
+
+</body>
+</html>
